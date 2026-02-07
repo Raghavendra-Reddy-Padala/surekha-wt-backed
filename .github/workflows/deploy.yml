@@ -19,14 +19,17 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/surekha-backend
-            # Initialize git if it's the first time, otherwise pull
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/Raghavendra-Reddy-Padala/surekha-wt-backed.git .
-            else
+            # If it's a git repo, pull. If not, initialize it.
+            if [ -d ".git" ]; then
               git pull origin main
+            else
+              git init
+              git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+              git fetch
+              git checkout -f main
             fi
             
-            # Install dependencies and restart the server
+            # Install and Start
             npm install --production
             pm2 delete hospital-api || true
             pm2 start server.js --name "hospital-api"
