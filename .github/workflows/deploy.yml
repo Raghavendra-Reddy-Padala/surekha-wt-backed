@@ -19,26 +19,23 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: 22
           script: |
-            # 1. Move to the directory
+            # 1. Tell the script where to find NVM and Node
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            
+            # 2. Move to app folder
             cd /var/www/surekha-backend
             
-            # 2. Setup Git to trust this directory
+            # 3. Setup Git to use the SSH key you already added
             git config --global --add safe.directory /var/www/surekha-backend
+            git remote set-url origin git@github.com:Raghavendra-Reddy-Padala/surekha-wt-backed.git
             
-            # 3. Handle Git (Using SSH URL to avoid password prompt)
-            if [ -d ".git" ]; then
-              git pull origin main
-            else
-              git init
-              git remote add origin git@github.com:Raghavendra-Reddy-Padala/surekha-wt-backed.git
-              git fetch
-              git checkout -f main
-            fi
+            # 4. Pull the latest code
+            git fetch --all
+            git reset --hard origin/main
             
-            # 4. Install dependencies using full path to npm
-            /usr/bin/npm install --production
-            
-            # 5. Restart the server using full path to pm2
-            /usr/bin/pm2 delete hospital-api || true
-            /usr/bin/pm2 start server.js --name "hospital-api"
-            /usr/bin/pm2 save
+            # 5. Install and Restart (Now 'npm' and 'pm2' will be recognized)
+            npm install --production
+            pm2 delete hospital-api || true
+            pm2 start server.js --name "hospital-api"
+            pm2 save
