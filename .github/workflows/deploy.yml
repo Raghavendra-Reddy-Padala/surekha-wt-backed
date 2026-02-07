@@ -2,7 +2,7 @@ name: Surkeha Hospital Backend
 
 on:
   push:
-    branches: [ main ] # Make sure this matches your branch name (main or master)
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -17,20 +17,28 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          port: 22
           script: |
+            # 1. Move to the directory
             cd /var/www/surekha-backend
-            # If it's a git repo, pull. If not, initialize it.
+            
+            # 2. Setup Git to trust this directory
+            git config --global --add safe.directory /var/www/surekha-backend
+            
+            # 3. Handle Git (Using SSH URL to avoid password prompt)
             if [ -d ".git" ]; then
               git pull origin main
             else
               git init
-              git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+              git remote add origin git@github.com:Raghavendra-Reddy-Padala/surekha-wt-backed.git
               git fetch
               git checkout -f main
             fi
             
-            # Install and Start
-            npm install --production
-            pm2 delete hospital-api || true
-            pm2 start server.js --name "hospital-api"
-            pm2 save
+            # 4. Install dependencies using full path to npm
+            /usr/bin/npm install --production
+            
+            # 5. Restart the server using full path to pm2
+            /usr/bin/pm2 delete hospital-api || true
+            /usr/bin/pm2 start server.js --name "hospital-api"
+            /usr/bin/pm2 save
