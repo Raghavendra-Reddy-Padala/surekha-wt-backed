@@ -79,6 +79,31 @@ const sendMenu = async (to) => {
 };
 
 
+app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head>
+                <title>Surekha API | Status</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f4f7f6; }
+                    .card { background: white; padding: 2.5rem; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; border-top: 6px solid #28a745; max-width: 400px; }
+                    h1 { color: #2c3e50; margin-bottom: 0.5rem; font-size: 1.8rem; }
+                    .status-box { background: #e8f5e9; color: #2e7d32; padding: 8px 15px; border-radius: 20px; display: inline-block; font-weight: 600; margin: 15px 0; }
+                    p { color: #7f8c8d; line-height: 1.6; }
+                    .footer { margin-top: 2rem; border-top: 1px solid #eee; padding-top: 1rem; color: #bdc3c7; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>Surekha Hospital</h1>
+                    <div class="status-box">● API ONLINE</div>
+                    <p>The backend engine is running perfectly and ready to handle hospital inquiries.</p>
+                    <div class="footer">Secure Meta Webhook Node</div>
+                </div>
+            </body>
+        </html>
+    `);
+});
 
 // API 1: WEB REQUEST 
 // Triggered by: Contact.js (Website)
