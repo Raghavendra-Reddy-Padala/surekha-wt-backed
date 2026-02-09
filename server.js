@@ -190,28 +190,37 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
+    console.log('🔥 WEBHOOK POST RECEIVED!');
+    console.log('📦 Full Body:', JSON.stringify(req.body, null, 2));
+    
     const body = req.body;
 
     if (body.object) {
+        console.log('✅ Object exists:', body.object);
+        
         if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
             const message = body.entry[0].changes[0].value.messages[0];
-            const sender = message.from; // User's phone number
+            const sender = message.from;
             const msgType = message.type;
 
             console.log(`📩 Incoming from ${sender}: ${msgType}`);
 
             if (msgType === 'text') {
                 const text = message.text.body.toLowerCase();
+                console.log(`💬 Text message: "${text}"`);
+                
                 if (text.includes('hi') || text.includes('hello')) {
+                    console.log('🎯 Sending menu...');
                     await sendMenu(sender);
                 } else {
+                    console.log('📝 Sending instruction...');
                     await sendReply(sender, "Please type 'Hi' to see the main menu.");
                 }
             }
 
-            // 2. Handle BUTTON CLICKS
             if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
                 const btnId = message.interactive.button_reply.id;
+                console.log(`🔘 Button clicked: ${btnId}`);
 
                 if (btnId === 'btn_book') {
                     await sendReply(sender, "📅 To book an appointment, please visit our website: https://surekhahospitals.in/contact");
@@ -223,13 +232,15 @@ app.post('/webhook', async (req, res) => {
                     await sendReply(sender, "🏥 We offer Cardiology, Pediatrics, and more. Details: https://surekhahospitals.in/services");
                 }
             }
+        } else {
+            console.log('⚠️ No messages in webhook data');
         }
         res.sendStatus(200);
     } else {
+        console.log('❌ No object in body');
         res.sendStatus(404);
     }
 });
-
 app.listen(PORT, () => {
     console.log(`🚀 Hospital Engine v2.0 running on port ${PORT}`);
 });
