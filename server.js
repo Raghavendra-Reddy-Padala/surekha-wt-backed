@@ -16,7 +16,7 @@ const MY_VERIFY_TOKEN = "hospital_secure_123";
 
 const sendWhatsApp = async (to, templateName, params) => {
     try {
-        const url = `https://graph.facebook.com/v17.0/${META_PHONE_ID}/messages`;
+        const url = `https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`;
         
         // Convert array of params ['Raju', '10AM'] into Meta format
         const components = [{
@@ -48,7 +48,7 @@ const sendWhatsApp = async (to, templateName, params) => {
 
 const sendReply = async (to, text) => {
     try {
-        await axios.post(`https://graph.facebook.com/v17.0/${META_PHONE_ID}/messages`, {
+        await axios.post(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
             messaging_product: "whatsapp",
             to: to,
             type: "text",
@@ -59,7 +59,7 @@ const sendReply = async (to, text) => {
 
 const sendMenu = async (to) => {
     try {
-        await axios.post(`https://graph.facebook.com/v17.0/${META_PHONE_ID}/messages`, {
+        await axios.post(`https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`, {
             messaging_product: "whatsapp",
             to: to,
             type: "interactive",
