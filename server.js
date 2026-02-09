@@ -174,10 +174,17 @@ app.get('/webhook', (req, res) => {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
+    console.log('🔔 META VERIFICATION ATTEMPT:');
+    console.log(`   Mode: ${mode}`);
+    console.log(`   Token Received: ${token}`);
+    console.log(`   Expected Token: ${MY_VERIFY_TOKEN}`);
+
     if (mode === 'subscribe' && token === MY_VERIFY_TOKEN) {
-        console.log("✅ Webhook Verified!");
+        console.log("✅ ✅ ✅ WEBHOOK VERIFIED! META CONNECTED SUCCESSFULLY! ✅ ✅ ✅");
+        console.log(`   Challenge: ${challenge}`);
         res.status(200).send(challenge);
     } else {
+        console.log("❌ VERIFICATION FAILED - Token mismatch or wrong mode");
         res.sendStatus(403);
     }
 });
