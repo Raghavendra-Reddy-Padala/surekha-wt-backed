@@ -145,7 +145,7 @@ app.post('/confirm-appointment', async (req, res) => {
         if (doctorPhone) {
             const bookingReason = reason || "Web Booking Confirmed";
             
-            await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [patientName, date, time, bookingReason]);
+            await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName,patientName, date, time, bookingReason]);
         }
 
         res.status(200).json({ success: true, message: "Confirmation sent to all" });
@@ -158,10 +158,10 @@ app.post('/confirm-appointment', async (req, res) => {
 // API 3: WALK-IN 
 // Triggered by: Admin Panel "Walk-in" Form
 app.post('/walk-in', async (req, res) => {
-    const { patientName, doctorPhone, date, time, reason } = req.body;
+    const {doctorName, patientName, doctorPhone, date, time, reason } = req.body;
     
     try {
-        await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [patientName, date, time, reason]);
+        await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName,patientName, date, time, reason]);
         res.status(200).json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
