@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { db, doc, getDoc, setDoc, deleteDoc, serverTimestamp } = require('./firebase');
 
 const app = express();
 app.use(express.json());
@@ -9,42 +10,63 @@ app.use(cors());
 
 const { 
     META_PHONE_ID, META_TOKEN, PORT, RECEPTIONIST_PHONE,
-    TEMP_WALKIN_DOC, TEMP_PATIENT_ACK, TEMP_STAFF_ALERT, TEMP_CONFIRM 
+    TEMP_WALKIN_DOC, TEMP_PATIENT_ACK, TEMP_STAFF_ALERT, TEMP_CONFIRM, TEMP_OTP
 } = process.env;
 
 const MY_VERIFY_TOKEN = "hospital_secure_123";
 
-const sendWhatsApp = async (to, templateName, params) => {
+// Helper: Generate 6-digit OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+// =================================================================
+// WHATSAPP FUNCTIONS
+// =================================================================
+const sendWhatsApp = async (to, templateName, bodyParams = [], buttonParams = []) => {
     try {
         const url = `https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`;
-        
-        // Convert array of params ['Raju', '10AM'] into Meta format
-        const components = [{
-            type: "body",
-            parameters: params.map(p => ({ type: "text", text: String(p) }))
-        }];
+
+        const components = [
+            {
+                type: "body",
+                parameters: bodyParams.map(p => ({
+                    type: "text",
+                    text: String(p)
+                }))
+            }
+        ];
+
+        if (buttonParams.length > 0) {
+            components.push({
+                type: "button",
+                sub_type: "url",
+                index: "0",
+                parameters: buttonParams.map(p => ({
+                    type: "text",
+                    text: String(p)
+                }))
+            });
+        }
 
         await axios.post(url, {
             messaging_product: "whatsapp",
-            to: to,
+            to,
             type: "template",
             template: {
                 name: templateName,
-                language: { code: "en" }, // standard "en" (or "en_US" if you selected that)
-                components: components
+                language: { code: "en" },
+                components
             }
         }, {
-            headers: { 'Authorization': `Bearer ${META_TOKEN}` }
+            headers: { Authorization: `Bearer ${META_TOKEN}` }
         });
+
         return true;
+
     } catch (error) {
-        console.error(`❌ Failed to send to ${to}:`, error.response ? error.response.data : error.message);
+        console.error(error.response ? error.response.data : error.message);
         throw new Error("WhatsApp Send Failed");
     }
 };
-
-
-
 
 const sendReply = async (to, text) => {
     try {
@@ -78,6 +100,129 @@ const sendMenu = async (to) => {
     } catch (e) { console.error("Menu failed", e.response ? e.response.data : e.message); }
 };
 
+// =================================================================
+// OTP APIs - FIRESTORE CLIENT SDK VERSION
+// =================================================================
+
+app.post('/send-otp', async (req, res) => {
+    const { phone, isResend = false } = req.body;
+    
+    if (!phone) return res.status(400).json({ error: "Phone number required" });
+
+    try {
+        const docRef = doc(db, 'otp_requests', phone);
+        const docSnap = await getDoc(docRef);
+
+        // RATE LIMITING
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            
+            // Fix: Handle both Timestamp object and number
+            let lastRequestTime = 0;
+            if (data.createdAt) {
+                if (typeof data.createdAt === 'number') {
+                    lastRequestTime = data.createdAt;
+                } else if (data.createdAt.toMillis) {
+                    lastRequestTime = data.createdAt.toMillis();
+                }
+            }
+            
+            const timeSinceLastRequest = Date.now() - lastRequestTime;
+            const cooldown = isResend ? 30000 : 60000;
+            
+            if (timeSinceLastRequest < cooldown) {
+                const waitTime = Math.ceil((cooldown - timeSinceLastRequest) / 1000);
+                return res.status(429).json({ 
+                    success: false,
+                    error: `Please wait ${waitTime} seconds before ${isResend ? 'resending' : 'requesting another OTP'}`,
+                    waitTime: waitTime
+                });
+            }
+        }
+
+        // Generate Code
+        const code = generateOTP();
+        const now = Date.now();
+        const expiresAt = now + 5 * 60 * 1000;
+
+        // STORE IN FIRESTORE - Use Date.now() as NUMBER
+        await setDoc(docRef, {
+            code: code,
+            expiresAt: expiresAt,
+            createdAt: now,  // Store as number (milliseconds)
+            resendCount: docSnap.exists() ? (docSnap.data().resendCount || 0) + 1 : 0,
+            isResend: isResend
+        });
+
+        console.log(`🔐 OTP ${isResend ? 'RESENT' : 'SENT'} for ${phone}: ${code}`);
+
+        // SEND VIA WHATSAPP
+await sendWhatsApp(phone, TEMP_OTP, [code], [code]);
+        
+        res.status(200).json({ 
+            success: true, 
+            message: isResend ? "OTP resent successfully" : "OTP sent securely"
+        });
+        
+    } catch (error) {
+        console.error("OTP Error:", error);
+        res.status(500).json({ success: false, error: "Failed to send OTP" });
+    }
+});
+
+app.post('/verify-otp', async (req, res) => {
+    const { phone, userCode } = req.body;
+
+    if (!phone || !userCode) {
+        return res.status(400).json({ success: false, error: "Phone and code required" });
+    }
+
+    try {
+        const docRef = doc(db, 'otp_requests', phone);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "No OTP found. Please request a new one." 
+            });
+        }
+
+        const data = docSnap.data();
+
+        // CHECK EXPIRY (expiresAt is already a number)
+        if (Date.now() > data.expiresAt) {
+            await deleteDoc(docRef);
+            return res.status(400).json({ 
+                success: false, 
+                error: "OTP expired. Please request a new one." 
+            });
+        }
+
+        // CHECK CODE MATCH
+        if (data.code === userCode) {
+            await deleteDoc(docRef);
+            return res.status(200).json({ 
+                success: true, 
+                message: "Verified Successfully!" 
+            });
+        } else {
+            return res.status(400).json({ 
+                success: false, 
+                error: "Invalid code. Please try again." 
+            });
+        }
+        
+    } catch (error) {
+        console.error("Verify Error:", error);
+        res.status(500).json({ success: false, error: "Verification failed" });
+    }
+});
+
+
+// =================================================================
+// EXISTING APIs
+// =================================================================
 
 app.get('/', (req, res) => {
     res.send(`
@@ -105,49 +250,31 @@ app.get('/', (req, res) => {
     `);
 });
 
-// API 1: WEB REQUEST 
-// Triggered by: Contact.js (Website)
-+app.post('/web-request', async (req, res) => {
+app.post('/web-request', async (req, res) => {
     const { patientName, patientPhone, doctorName, date } = req.body;
     console.log(`🌍 Web Request: ${patientName} -> Dr. ${doctorName}`);
 
     try {
-     
         await sendWhatsApp(patientPhone, TEMP_PATIENT_ACK, [patientName, doctorName]);
-        
         console.log("✅ Patient Number is Real! (Message delivered)");
-
-        
         await sendWhatsApp(RECEPTIONIST_PHONE, TEMP_STAFF_ALERT, [patientName, patientPhone, doctorName, date]);
-
         res.status(200).json({ success: true, message: "Inquiry processed" });
-
     } catch (error) {
         console.log("⛔ SPAM BLOCKED: Could not message patient, so NOT alerting staff.");
         res.status(400).json({ success: false, error: "Invalid Number or WhatsApp Error" });
     }
 });
 
-
-
-// API 2: CONFIRM APPOINTMENT 
-// Triggered by: Admin Panel "Confirm" Button
 app.post('/confirm-appointment', async (req, res) => {
     const { patientName, patientPhone, doctorName, doctorPhone, date, time, reason } = req.body;
-    
     console.log(`👍 Confirming: ${patientName} with Dr. ${doctorName}`);
 
     try {
-
         await sendWhatsApp(patientPhone, TEMP_CONFIRM, [patientName, doctorName, date, time]);
-
- 
         if (doctorPhone) {
             const bookingReason = reason || "Web Booking Confirmed";
-            
-            await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName,patientName, date, time, bookingReason]);
+            await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName, patientName, date, time, bookingReason]);
         }
-
         res.status(200).json({ success: true, message: "Confirmation sent to all" });
     } catch (error) {
         console.error("Confirmation Error:", error.message);
@@ -155,92 +282,66 @@ app.post('/confirm-appointment', async (req, res) => {
     }
 });
 
-// API 3: WALK-IN 
-// Triggered by: Admin Panel "Walk-in" Form
 app.post('/walk-in', async (req, res) => {
-    const {doctorName, patientName, doctorPhone, date, time, reason } = req.body;
+    const { doctorName, patientName, doctorPhone, date, time, reason } = req.body;
     
     try {
-        await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName,patientName, date, time, reason]);
+        await sendWhatsApp(doctorPhone, TEMP_WALKIN_DOC, [doctorName, patientName, date, time, reason]);
         res.status(200).json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// 🆕 NEW: WEBHOOK VERIFICATION (Meta calls this to check if you exist)
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    console.log('🔔 META VERIFICATION ATTEMPT:');
-    console.log(`   Mode: ${mode}`);
-    console.log(`   Token Received: ${token}`);
-    console.log(`   Expected Token: ${MY_VERIFY_TOKEN}`);
-
     if (mode === 'subscribe' && token === MY_VERIFY_TOKEN) {
-        console.log("✅ ✅ ✅ WEBHOOK VERIFIED! META CONNECTED SUCCESSFULLY! ✅ ✅ ✅");
-        console.log(`   Challenge: ${challenge}`);
+        console.log("✅ WEBHOOK VERIFIED!");
         res.status(200).send(challenge);
     } else {
-        console.log("❌ VERIFICATION FAILED - Token mismatch or wrong mode");
         res.sendStatus(403);
     }
 });
 
 app.post('/webhook', async (req, res) => {
-    console.log('🔥 WEBHOOK POST RECEIVED!');
-    console.log('📦 Full Body:', JSON.stringify(req.body, null, 2));
-    
     const body = req.body;
 
     if (body.object) {
-        console.log('✅ Object exists:', body.object);
-        
         if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
             const message = body.entry[0].changes[0].value.messages[0];
             const sender = message.from;
             const msgType = message.type;
 
-            console.log(`📩 Incoming from ${sender}: ${msgType}`);
-
             if (msgType === 'text') {
                 const text = message.text.body.toLowerCase();
-                console.log(`💬 Text message: "${text}"`);
-                
                 if (text.includes('hi') || text.includes('hello')) {
-                    console.log('🎯 Sending menu...');
                     await sendMenu(sender);
                 } else {
-                    console.log('📝 Sending instruction...');
                     await sendReply(sender, "Please type 'Hi' to see the main menu.");
                 }
             }
 
             if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
                 const btnId = message.interactive.button_reply.id;
-                console.log(`🔘 Button clicked: ${btnId}`);
-
                 if (btnId === 'btn_book') {
-                    await sendReply(sender, "📅 To book an appointment, please visit our website: https://surekhahospitals.in/contact");
-                } 
-                else if (btnId === 'btn_doctors') {
-                    await sendReply(sender, "👨‍⚕️ Meet our specialists here: https://surekhahospitals.in/doctors");
-                } 
-                else if (btnId === 'btn_services') {
-                    await sendReply(sender, "🏥 We offer Cardiology, Pediatrics, and more. Details: https://surekhahospitals.in/services");
+                    await sendReply(sender, "📅 To book: https://surekhahospitals.in/contact");
+                } else if (btnId === 'btn_doctors') {
+                    await sendReply(sender, "👨‍⚕️ Doctors: https://surekhahospitals.in/doctors");
+                } else if (btnId === 'btn_services') {
+                    await sendReply(sender, "🏥 Services: https://surekhahospitals.in/services");
                 }
             }
-        } else {
-            console.log('⚠️ No messages in webhook data');
         }
         res.sendStatus(200);
     } else {
-        console.log('❌ No object in body');
         res.sendStatus(404);
     }
 });
+
 app.listen(PORT, () => {
     console.log(`🚀 Hospital Engine v2.0 running on port ${PORT}`);
+    console.log(`✅ Firebase Client SDK initialized`);
 });
