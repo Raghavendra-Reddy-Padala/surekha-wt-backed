@@ -10,10 +10,25 @@ app.use(cors());
 
 const { 
     META_PHONE_ID, META_TOKEN, PORT, RECEPTIONIST_PHONE,
-    TEMP_WALKIN_DOC, TEMP_PATIENT_ACK, TEMP_STAFF_ALERT, TEMP_CONFIRM, TEMP_OTP
+    TEMP_WALKIN_DOC, TEMP_PATIENT_ACK, TEMP_STAFF_ALERT, TEMP_CONFIRM, TEMP_OTP,
+    API_SECRET_KEY
 } = process.env;
 
 const MY_VERIFY_TOKEN = "hospital_secure_123";
+
+// Middleware: API Key Guard
+const requireApiKey = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    
+    if (!authHeader || authHeader !== `Bearer ${API_SECRET_KEY}`) {
+        return res.status(401).json({ 
+            success: false, 
+            error: "Unauthorized: Invalid or missing API key" 
+        });
+    }
+    
+    next();
+};
 
 // Helper: Generate 6-digit OTP
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -98,9 +113,9 @@ const sendMenu = async (to) => {
     } catch (e) { console.error("Menu failed", e.response ? e.response.data : e.message); }
 };
 
-// OTP APIs - FIRESTORE CLIENT SDK VERSION
+// OTP APIs - Protected with API Key
 
-app.post('/send-otp', async (req, res) => {
+app.post('/send-otp', requireApiKey, async (req, res) => {
     const { phone, isResend = false } = req.body;
     
     if (!phone) return res.status(400).json({ error: "Phone number required" });
@@ -139,18 +154,17 @@ app.post('/send-otp', async (req, res) => {
         const now = Date.now();
         const expiresAt = now + 5 * 60 * 1000;
 
-        // STORE IN FIRESTORE - Use Date.now() as NUMBER
         await setDoc(docRef, {
             code: code,
             expiresAt: expiresAt,
-            createdAt: now,  // Store as number (milliseconds)
+            createdAt: now,
             resendCount: docSnap.exists() ? (docSnap.data().resendCount || 0) + 1 : 0,
             isResend: isResend
         });
 
         console.log(`🔐 OTP ${isResend ? 'RESENT' : 'SENT'} for ${phone}: ${code}`);
 
-await sendWhatsApp(phone, TEMP_OTP, [code], [code]);
+        await sendWhatsApp(phone, TEMP_OTP, [code], [code]);
         
         res.status(200).json({ 
             success: true, 
@@ -163,7 +177,7 @@ await sendWhatsApp(phone, TEMP_OTP, [code], [code]);
     }
 });
 
-app.post('/verify-otp', async (req, res) => {
+app.post('/verify-otp', requireApiKey, async (req, res) => {
     const { phone, userCode } = req.body;
 
     if (!phone || !userCode) {
@@ -211,7 +225,7 @@ app.post('/verify-otp', async (req, res) => {
 });
 
 
-//  APIs
+// meta apis
 
 app.get('/', (req, res) => {
     res.send(`
@@ -239,9 +253,8 @@ app.get('/', (req, res) => {
     `);
 });
 
-//for keping request - users
-
-app.post('/web-request', async (req, res) => {
+// for keeping request - users
+app.post('/web-request', requireApiKey, async (req, res) => {
     const { patientName, patientPhone, doctorName, date } = req.body;
     console.log(`🌍 Web Request: ${patientName} -> Dr. ${doctorName}`);
 
@@ -256,8 +269,8 @@ app.post('/web-request', async (req, res) => {
     }
 });
 
-//for confirming appointment - recepionist 
-app.post('/confirm-appointment', async (req, res) => {
+// for confirming appointment - receptionist
+app.post('/confirm-appointment', requireApiKey, async (req, res) => {
     const { patientName, patientPhone, doctorName, doctorPhone, date, time, reason } = req.body;
     console.log(`👍 Confirming: ${patientName} with Dr. ${doctorName}`);
 
@@ -273,9 +286,9 @@ app.post('/confirm-appointment', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// direct walk in 
 
-app.post('/walk-in', async (req, res) => {
+// direct walk in
+app.post('/walk-in', requireApiKey, async (req, res) => {
     const { doctorName, patientName, doctorPhone, date, time, reason } = req.body;
     
     try {
