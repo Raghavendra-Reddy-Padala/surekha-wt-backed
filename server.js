@@ -7,16 +7,23 @@ const otpRoutes = require('./routes/otp.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const appointmentRoutes = require('./routes/appointment.routes');
 const webhookRoutes = require('./routes/webhook.routes');
+const agoraController = require('./controllers/agora.controller'); // <-- Import is fine here
 
+// 1. Initialize the Express app FIRST
 const app = express();
+
+// 2. Set up Middleware
 app.use(express.json());
 app.use(cors());
 
-// Mount routes
+// 3. Mount Routes (AFTER app is initialized)
 app.use('/', otpRoutes);
 app.use('/', paymentRoutes);
 app.use('/', appointmentRoutes);
 app.use('/', webhookRoutes);
+
+// Add your Agora route here alongside the others
+app.get('/agora-token/:channelName', agoraController.generateToken);
 
 // Health Check / Status Route
 app.get('/', (req, res) => {
