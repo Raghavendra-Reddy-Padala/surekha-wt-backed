@@ -34,3 +34,36 @@ exports.walkIn = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+exports.sendTeleconsultationLinks = async (req, res) => {
+    const { patientName, patientPhone, doctorName, doctorPhone, date, time, bookingId } = req.body;
+
+    try {
+        const channelName = `room-${bookingId}`;
+        const baseUrl = "https://surekhahospitals.in";
+
+        const doctorLink = `${baseUrl}/video-call/${channelName}?role=host`;
+        const patientLink = `${baseUrl}/video-call/${channelName}?role=audience`;
+
+        await sendWhatsApp(
+            patientPhone,
+            process.env.TEMP_TELE_PATIENT,
+            [patientName, doctorName, date, time, patientLink]
+        );
+
+        // Send doctor their host link (if phone available)
+        if (doctorPhone) {
+            // Template variables: [doctorName, patientName, date, time, doctorLink]
+            await sendWhatsApp(
+                doctorPhone,
+                process.env.TEMP_TELE_DOCTOR,
+                [doctorName, patientName, date, time, doctorLink]
+            );
+        }
+
+        res.status(200).json({ success: true, message: "Teleconsultation links sent via WhatsApp" });
+    } catch (error) {
+        console.error("Teleconsultation WhatsApp Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
