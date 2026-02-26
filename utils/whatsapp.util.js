@@ -2,7 +2,7 @@ const axios = require('axios');
 
 const sendWhatsApp = async (to, templateName, bodyParams = [], buttonParams = []) => {
     try {
-        const url = `https://graph.facebook.com/v21.0/${process.env.META_PHONE_ID}/messages`;
+        const url = `https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`;
         const components = [
             {
                 type: "body",
@@ -32,20 +32,22 @@ const sendWhatsApp = async (to, templateName, bodyParams = [], buttonParams = []
 
 const sendReply = async (to, text) => {
     try {
-        await axios.post(`https://graph.facebook.com/v21.0/${process.env.META_PHONE_ID}/messages`, {
+        const res = await axios.post(`https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`, {
             messaging_product: "whatsapp",
             to,
             type: "text",
             text: { body: text }
         }, { headers: { 'Authorization': `Bearer ${process.env.META_TOKEN}` } });
-    } catch (e) { 
-        console.error("Reply failed", e.message); 
+        console.log("✅ Reply sent to", to);
+        return res.data;
+    } catch (e) {
+        console.error("❌ Reply failed:", e.response ? JSON.stringify(e.response.data) : e.message);
     }
 };
 
 const sendMenu = async (to) => {
     try {
-        await axios.post(`https://graph.facebook.com/v21.0/${process.env.META_PHONE_ID}/messages`, {
+        const res = await axios.post(`https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`, {
             messaging_product: "whatsapp",
             to,
             type: "interactive",
@@ -54,16 +56,39 @@ const sendMenu = async (to) => {
                 body: { text: "Welcome to Surekha Multi-Speciality Hospital! 🏥\nHow can we help you today?" },
                 action: {
                     buttons: [
-                        { type: "reply", reply: { id: "btn_book", title: "Book Appointment" } },
-                        { type: "reply", reply: { id: "btn_doctors", title: "View Doctors" } },
-                        { type: "reply", reply: { id: "btn_services", title: "Our Services" } }
+                        { type: "reply", reply: { id: "btn_walkin", title: "Walk-in Appointment" } },
+                        { type: "reply", reply: { id: "btn_tele", title: "Teleconsultation" } },
+                        { type: "reply", reply: { id: "btn_info", title: "Hospital Info" } }
                     ]
                 }
             }
         }, { headers: { 'Authorization': `Bearer ${process.env.META_TOKEN}` } });
-    } catch (e) { 
-        console.error("Menu failed", e.response ? e.response.data : e.message); 
+        console.log("✅ Menu sent to", to);
+        return res.data;
+    } catch (e) {
+        console.error("❌ Menu failed:", e.response ? JSON.stringify(e.response.data) : e.message);
     }
 };
 
-module.exports = { sendWhatsApp, sendReply, sendMenu };
+const sendInfoLinks = async (to) => {
+    try {
+        const res = await axios.post(`https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`, {
+            messaging_product: "whatsapp",
+            to,
+            type: "text",
+            text: {
+                body: "🏥 *Surekha Multi-Speciality Hospital*\n\n" +
+                      "🌐 Website: https://surekhahospitals.in\n" +
+                      "📅 Appointments: https://surekhahospitals.in/appointment\n" +
+                      "📞 Call us: +91 90002 70564\n\n" +
+                      "Type *Hi* to go back to the main menu."
+            }
+        }, { headers: { 'Authorization': `Bearer ${process.env.META_TOKEN}` } });
+        console.log("✅ Info links sent to", to);
+        return res.data;
+    } catch (e) {
+        console.error("❌ Info links failed:", e.response ? JSON.stringify(e.response.data) : e.message);
+    }
+};
+
+module.exports = { sendWhatsApp, sendReply, sendMenu, sendInfoLinks };
