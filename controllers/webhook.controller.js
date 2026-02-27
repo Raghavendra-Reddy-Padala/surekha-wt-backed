@@ -15,6 +15,7 @@ exports.verifyWebhook = (req, res) => {
 };
 
 exports.handleWebhook = async (req, res) => {
+    console.log("🚨 WEBHOOK KNOCK! Payload:", JSON.stringify(req.body, null, 2));
     const body = req.body;
     if (body.object) {
         if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
@@ -30,12 +31,21 @@ exports.handleWebhook = async (req, res) => {
                     await sendReply(sender, "Please type 'Hi' to see the main menu.");
                 }
             }
-            if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
-                const btnId = message.interactive.button_reply.id;
-                if (btnId === 'btn_book') await sendReply(sender, "📅 To book: https://surekhahospitals.in/contact");
-                else if (btnId === 'btn_doctors') await sendReply(sender, "👨‍⚕️ Doctors: https://surekhahospitals.in/doctors");
-                else if (btnId === 'btn_services') await sendReply(sender, "🏥 Services: https://surekhahospitals.in/services");
-            }
+           // Inside webhook.controller.js
+
+if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
+    const btnId = message.interactive.button_reply.id;
+    
+    if (btnId === 'btn_walkin') {
+        await sendReply(sender, "📅 To book a physical visit: https://surekhahospitals.in/contact");
+    } 
+    else if (btnId === 'btn_tele') {
+        await sendReply(sender, "💻 To book a video call: https://surekhahospitals.in/teleconsult");
+    } 
+    else if (btnId === 'btn_info') {
+        await sendInfoLinks(sender); // <-- Uses your new util function!
+    }
+}
         }
         res.sendStatus(200);
     } else {
