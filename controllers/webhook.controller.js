@@ -1,4 +1,4 @@
-const { sendMenu, sendReply } = require('../utils/whatsapp.util');
+const { sendMenu, sendReply,sendInfoLinks  } = require('../utils/whatsapp.util');
 const MY_VERIFY_TOKEN = "hospital_secure_123";
 
 exports.verifyWebhook = (req, res) => {
