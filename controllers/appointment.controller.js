@@ -35,6 +35,16 @@ exports.walkIn = async (req, res) => {
     }
 };
 
+exports.sendPrescription = async (req, res) => {
+    const { patientName, patientPhone, prescriptionLink } = req.body;
+    try {
+        await sendWhatsApp(patientPhone, process.env.TEMP_PRESCRIPTION, [patientName, prescriptionLink]);
+        res.status(200).json({ success: true, message: "Prescription sent via WhatsApp" });
+    } catch (error) {
+        console.error("Prescription WhatsApp Error:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
 exports.sendTeleconsultationLinks = async (req, res) => {
     const { patientName, patientPhone, doctorName, doctorPhone, date, time, bookingId } = req.body;
 
@@ -61,8 +71,13 @@ exports.sendTeleconsultationLinks = async (req, res) => {
             );
         }
 
-        res.status(200).json({ success: true, message: "Teleconsultation links sent via WhatsApp" });
-    } catch (error) {
+res.status(200).json({ 
+    success: true, 
+    message: "Teleconsultation links sent via WhatsApp",
+    patientLink,   
+    doctorLink,    
+    roomId: channelName 
+});    } catch (error) {
         console.error("Teleconsultation WhatsApp Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }

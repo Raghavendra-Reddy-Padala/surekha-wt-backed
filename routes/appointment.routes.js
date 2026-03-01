@@ -7,5 +7,6 @@ router.post('/web-request', requireApiKey, appointmentController.webRequest);
 router.post('/confirm-appointment', requireApiKey, appointmentController.confirmAppointment);
 router.post('/walk-in', requireApiKey, appointmentController.walkIn);
 router.post('/send-teleconsultation-links', appointmentController.sendTeleconsultationLinks);
+router.post('/send-prescription', appointmentController.sendPrescription);
 
 module.exports = router;
