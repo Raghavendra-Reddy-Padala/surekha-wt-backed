@@ -187,7 +187,7 @@ const handleListReply = async (sender, listId, session) => {
     await sendReply(
         sender,
         `✅ Great choice!\n\n` +
-        `👨‍⚕️ *Dr. ${selectedDoctor.name}*\n` +
+        `👨‍⚕️ *${selectedDoctor.name}*\n` +
         `🏥 ${selectedDoctor.department}\n` +
         `💰 Consultation fee: ₹${appointmentCost}\n\n` +
         `Please tell me your *full name* to proceed:`
@@ -258,7 +258,7 @@ const handleDate = async (sender, text, session) => {
     if (!availableSlots.length) {
         await sendReply(
             sender,
-            `😔 Dr. ${session.doctorName} is not available on ${dayName} (${normalised}).\n\n` +
+            `😔 ${session.doctorName} is not available on ${dayName} (${normalised}).\n\n` +
             `Please choose another date:`
         );
         return;

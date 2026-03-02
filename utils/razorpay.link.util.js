@@ -1,33 +1,9 @@
 /**
  * Creates a Razorpay Payment Link for WhatsApp booking flow.
- *
- * Why Payment Links (not Orders)?
- * - Payment Links have their own hosted payment page — user just taps the URL.
- * - Razorpay fires `payment_link.paid` webhook to YOUR server when paid.
- * - All booking context is embedded in `notes` so the webhook can reconstruct
- *   the full booking without any session lookup.
- * - Links can expire automatically — no dangling unpaid bookings.
  */
 
 const razorpay = require('../config/razorpay');
 
-/**
- * Create a Razorpay Payment Link.
- *
- * @param {Object} params
- * @param {string} params.phone         - Patient WhatsApp number e.g. "+919032323095"
- * @param {string} params.patientName   - Patient full name
- * @param {string} params.doctorName    - e.g. "Dr. Yanda Sireesha"
- * @param {string} params.doctorId      - Firestore doctor document ID
- * @param {string} params.department    - e.g. "Anaesthesia and Critical Care"
- * @param {string} params.date          - e.g. "2026-03-10"
- * @param {string} params.timeSlot      - e.g. "10:00 AM"
- * @param {string} params.reason        - Reason for visit
- * @param {number} params.amount        - Appointment cost in INR (integer)
- * @param {string} params.appointmentType - "paid_appointment" | "teleconsultation"
- *
- * @returns {{ shortUrl: string, paymentLinkId: string }}
- */
 const createPaymentLink = async (params) => {
     const {
         phone,
@@ -42,18 +18,25 @@ const createPaymentLink = async (params) => {
         appointmentType,
     } = params;
 
-    // Expire link in 1 hour (Unix timestamp)
-    const expireBy = Math.floor(Date.now() / 1000) + 3600;
+    // ✅ appointmentcost in Firestore is a string e.g. "1000"
+    const amountInt = parseInt(amount, 10);
+    if (!amountInt || amountInt <= 0) {
+        throw new Error(`Invalid appointment amount: "${amount}" — check appointmentcost field in Firestore`);
+    }
 
-    // Clean phone for Razorpay (needs digits only, no +91)
+    // Clean phone for Razorpay (digits only, no +91)
     const cleanPhone = phone.replace(/^\+91/, '').replace(/\D/g, '');
 
+    console.log(`💳 Creating payment link: ₹${amountInt} | ${doctorName} | Patient: ${patientName}`);
+
+    // ✅ FIX: Do NOT set expire_by at all — Razorpay defaults to 6 months.
+    // The "15 minutes minimum" rule causes issues in test mode with clock skew.
+    // Removing expire_by entirely avoids this completely.
     const paymentLinkData = {
-        amount: amount * 100, // Razorpay expects paise
+        amount: amountInt * 100, // paise (₹1000 → 100000)
         currency: 'INR',
         accept_partial: false,
-        expire_by: expireBy,
-        description: `${appointmentType === 'teleconsultation' ? 'Teleconsultation' : 'Hospital Visit'} with ${doctorName}`,
+        description: `${appointmentType === 'teleconsultation' ? 'Teleconsultation' : 'Hospital Visit'} - ${doctorName}`,
         customer: {
             name: patientName,
             contact: cleanPhone,
@@ -63,18 +46,18 @@ const createPaymentLink = async (params) => {
             email: false,
         },
         reminder_enable: false,
-        // 🔑 ALL booking data stored in notes — webhook reads this to save to Firebase
+        // 🔑 All booking data in notes so webhook can reconstruct the booking
+        // ✅ Max 15 key-value pairs, max 256 chars each — we have 9 keys, all short
         notes: {
-            patientName,
-            phone,
-            doctorName,
-            doctorId,
-            department,
-            date,
-            timeSlot,
-            reason,
-            appointmentType,
-            bookedVia: 'whatsapp',
+            patientName:     String(patientName).substring(0, 255),
+            phone:           String(phone).substring(0, 50),
+            doctorName:      String(doctorName).substring(0, 100),
+            doctorId:        String(doctorId || '').substring(0, 100),
+            department:      String(department || '').substring(0, 100),
+            date:            String(date || '').substring(0, 20),
+            timeSlot:        String(timeSlot || '').substring(0, 20),
+            reason:          String(reason || '').substring(0, 255),
+            appointmentType: String(appointmentType || 'paid_appointment').substring(0, 50),
         },
         callback_url: `https://surekhahospitals.in/payment-success`,
         callback_method: 'get',
@@ -82,7 +65,7 @@ const createPaymentLink = async (params) => {
 
     const link = await razorpay.paymentLink.create(paymentLinkData);
 
-    console.log(`💳 Payment link created: ${link.short_url} for ₹${amount} | ${patientName} | ${doctorName}`);
+    console.log(`✅ Payment link created: ${link.short_url} for ₹${amountInt}`);
 
     return {
         shortUrl: link.short_url,

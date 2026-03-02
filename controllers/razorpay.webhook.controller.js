@@ -14,7 +14,8 @@
 
 const crypto = require('crypto');
 const { saveBookingToFirestore } = require('../utils/firebase.bot.util');
-const { sendBookingConfirmation, sendReceptionistAlert } = require('../utils/whatsapp.bot.util');
+const { sendBookingConfirmation } = require('../utils/whatsapp.bot.util');
+const axios = require('axios');
 const { clearSession } = require('../utils/session.store');
 
 exports.handleRazorpayWebhook = async (req, res) => {
@@ -77,7 +78,7 @@ exports.handleRazorpayWebhook = async (req, res) => {
 
         const amountPaid = payment.amount / 100; // Convert paise to INR
 
-        console.log(`✅ Payment confirmed: ₹${amountPaid} | ${patientName} | Dr. ${doctorName}`);
+        console.log(`✅ Payment confirmed: ₹${amountPaid} | ${patientName} | ${doctorName}`);
 
         // ── 4. BUILD BOOKING DATA (matches web booking structure exactly) ────
         const bookingData = {
@@ -117,17 +118,28 @@ exports.handleRazorpayWebhook = async (req, res) => {
             console.warn('⚠️ Patient confirmation WhatsApp failed:', waErr.message);
         }
 
-        // Send to receptionist
+        // Trigger /web-request to notify patient (template) + receptionist (template)
         try {
-            await sendReceptionistAlert(fullBooking);
+            await axios.post(`https://api.surekhahospitals.in/web-request`, {
+                patientName: fullBooking.patientName,
+                patientPhone: fullBooking.phone,
+                doctorName: fullBooking.doctorName,
+                date: fullBooking.date,
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.API_SECRET_KEY}`
+                }
+            });
+            console.log('✅ /web-request notification sent');
         } catch (waErr) {
-            console.warn('⚠️ Receptionist alert WhatsApp failed:', waErr.message);
+            console.warn('⚠️ /web-request failed (booking still saved):', waErr.message);
         }
 
         // ── 7. CLEAR SESSION ─────────────────────────────────────────────────
         clearSession(phone);
 
-        console.log(`🎉 WhatsApp booking complete: ${bookingId} | ${patientName} | Dr. ${doctorName}`);
+        console.log(`🎉 WhatsApp booking complete: ${bookingId} | ${patientName} | ${doctorName}`);
 
         return res.status(200).json({
             success: true,

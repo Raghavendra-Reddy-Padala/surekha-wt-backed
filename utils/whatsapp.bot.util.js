@@ -41,9 +41,9 @@ const sendMainMenu = async (to) => {
                 },
                 action: {
                     buttons: [
-                        { type: 'reply', reply: { id: 'btn_walkin', title: '🏥 Walk-in Appointment' } },
-                        { type: 'reply', reply: { id: 'btn_tele', title: '💻 Teleconsultation' } },
-                        { type: 'reply', reply: { id: 'btn_info', title: 'ℹ️ Hospital Info' } },
+                        { type: 'reply', reply: { id: 'btn_walkin', title: 'Walk-in Appointment' } },
+                        { type: 'reply', reply: { id: 'btn_tele', title: 'Teleconsultation' } },
+                        { type: 'reply', reply: { id: 'btn_info', title: 'Hospital Info' } },
                     ],
                 },
             },
@@ -73,7 +73,7 @@ const sendDoctorList = async (to, doctors, appointmentType) => {
             title: dept.substring(0, 24), // WA max 24 chars
             rows: docs.map(d => ({
                 id: `doc_${d.id}`,
-                title: `Dr. ${d.name}`.substring(0, 24),
+                title: d.name.substring(0, 24),
                 description: `${d.designation || ''} | ₹${d.appointmentcost || 500}`.substring(0, 72),
             })),
         }));
@@ -109,7 +109,7 @@ const sendSlotList = async (to, slots, doctorName, date) => {
     const slotLines = slots.map((slot, i) => `  ${i + 1}. ${slot}`).join('\n');
     await sendReply(
         to,
-        `🕐 *Available Time Slots*\nDr. ${doctorName} on ${date}:\n\n${slotLines}\n\nReply with the *slot number* (e.g. *1*)`
+        `🕐 *Available Time Slots*\n${doctorName} on ${date}:\n\n${slotLines}\n\nReply with the *slot number* (e.g. *1*)`
     );
 };
 
@@ -122,7 +122,7 @@ const sendPaymentLink = async (to, paymentUrl, patientName, doctorName, amount, 
         to,
         `💳 *Complete Your Booking*\n\n` +
         `Hi ${patientName}! Your appointment details are ready.\n\n` +
-        `👨‍⚕️ Doctor: Dr. ${doctorName}\n` +
+        `👨‍⚕️ Doctor: ${doctorName}\n` +
         `💰 Amount: ₹${amount}\n` +
         `📋 Type: ${typeLabel}\n\n` +
         `👇 *Tap the link below to pay securely:*\n${paymentUrl}\n\n` +
@@ -142,7 +142,7 @@ const sendBookingConfirmation = async (to, booking) => {
         `✅ *Appointment Confirmed!*\n\n` +
         `Hi ${patientName}, your booking is confirmed!\n\n` +
         `📋 *Booking Details:*\n` +
-        `👨‍⚕️ Doctor: Dr. ${doctorName}\n` +
+        `👨‍⚕️ Doctor: ${doctorName}\n` +
         `🏥 Department: ${department}\n` +
         `📅 Date: ${date}\n` +
         `🕐 Time: ${timeSlot}\n` +
@@ -172,7 +172,7 @@ const sendReceptionistAlert = async (booking) => {
         `🔔 *New ${typeLabel} Booking (WhatsApp)*\n\n` +
         `👤 Patient: ${patientName}\n` +
         `📞 Phone: ${phone}\n` +
-        `👨‍⚕️ Doctor: Dr. ${doctorName}\n` +
+        `👨‍⚕️ Doctor: ${doctorName}\n` +
         `📅 Date: ${date}\n` +
         `🕐 Time: ${timeSlot}\n` +
         `💬 Reason: ${reason || 'Not specified'}\n` +

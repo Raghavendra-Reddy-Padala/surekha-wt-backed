@@ -32,28 +32,17 @@ const getActiveDoctors = async () => {
 
 /**
  * Fetch a single doctor by their display name.
- * e.g. "Dr. Yanda Sireesha"
+ * e.g. "Dr. Yanda Sireesha" (stored as-is in Firestore)
  */
 const getDoctorByName = async (doctorName) => {
     try {
-        // Name stored without "Dr." prefix in Firestore (e.g. "Yanda Sireesha")
-        // but let's handle both cases gracefully
-        const nameToQuery = doctorName.replace(/^Dr\.\s*/i, '').trim();
+        // Name stored WITH "Dr." prefix in Firestore e.g. "Dr. Yanda Sireesha"
         const q = query(
             collection(db, 'doctors'),
-            where('name', '==', nameToQuery)
+            where('name', '==', doctorName)
         );
         const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-            // Try with "Dr." prefix just in case
-            const q2 = query(
-                collection(db, 'doctors'),
-                where('name', '==', `Dr. ${nameToQuery}`)
-            );
-            const snap2 = await getDocs(q2);
-            if (snap2.empty) return null;
-            return { id: snap2.docs[0].id, ...snap2.docs[0].data() };
-        }
+        if (snapshot.empty) return null;
         return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
     } catch (err) {
         console.error('❌ getDoctorByName error:', err);
