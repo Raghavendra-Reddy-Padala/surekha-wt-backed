@@ -1,20 +1,27 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-// Import routes
+// Routes
 const otpRoutes = require('./routes/otp.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const appointmentRoutes = require('./routes/appointment.routes');
 const webhookRoutes = require('./routes/webhook.routes');
-const agoraController = require('./controllers/agora.controller'); // <-- Import is fine here
+const razorpayWebhookRoutes = require('./routes/razorpay.webhook.routes'); // 👈 NEW
+const agoraController = require('./controllers/agora.controller');
 
 const app = express();
 
+// ⚠️  IMPORTANT ORDER: Razorpay webhook MUST be mounted BEFORE express.json()
+// because it needs the raw request body for HMAC signature verification.
+app.use('/', razorpayWebhookRoutes); // 👈 BEFORE express.json()
+
+// Global middleware
 app.use(express.json());
 app.use(cors());
 
-// 3. Mount Routes (AFTER app is initialized)
+// Existing routes
 app.use('/', otpRoutes);
 app.use('/', paymentRoutes);
 app.use('/', appointmentRoutes);
@@ -22,7 +29,7 @@ app.use('/', webhookRoutes);
 
 app.get('/agora-token/:channelName', agoraController.generateToken);
 
-// Health Check / Status Route
+// Health check
 app.get('/', (req, res) => {
     res.send(`
         <html>
@@ -48,9 +55,9 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
     console.log(`🚀 Hospital Engine v2.0 running on port ${PORT}`);
     console.log(`✅ Firebase Client SDK initialized`);
     console.log(`💳 Razorpay initialized: ${process.env.RAZORPAY_KEY_ID}`);
+    console.log(`🤖 WhatsApp Bot active`);
 });

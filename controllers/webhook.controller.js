@@ -1,11 +1,19 @@
-const { sendMenu, sendReply,sendInfoLinks  } = require('../utils/whatsapp.util');
+/**
+ * webhook.controller.js — UPDATED
+ *
+ * Routes all incoming WhatsApp messages through the conversation handler.
+ * Replace your existing webhook.controller.js with this.
+ */
+
+const { handleMessage } = require('../handlers/conversation.handler');
+
 const MY_VERIFY_TOKEN = "hospital_secure_123";
 
 exports.verifyWebhook = (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
-    
+
     if (mode === 'subscribe' && token === MY_VERIFY_TOKEN) {
         console.log("✅ WEBHOOK VERIFIED!");
         res.status(200).send(challenge);
@@ -15,40 +23,26 @@ exports.verifyWebhook = (req, res) => {
 };
 
 exports.handleWebhook = async (req, res) => {
-    console.log("🚨 WEBHOOK KNOCK! Payload:", JSON.stringify(req.body, null, 2));
-    const body = req.body;
-    if (body.object) {
-        if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages) {
-            const message = body.entry[0].changes[0].value.messages[0];
-            const sender = message.from;
-            const msgType = message.type;
-            
-            if (msgType === 'text') {
-                const text = message.text.body.toLowerCase();
-                if (text.includes('hi') || text.includes('hello')) {
-                    await sendMenu(sender);
-                } else {
-                    await sendReply(sender, "Please type 'Hi' to see the main menu.");
-                }
-            }
-           // Inside webhook.controller.js
+    // Respond to Meta immediately — must be fast!
+    res.sendStatus(200);
 
-if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
-    const btnId = message.interactive.button_reply.id;
-    
-    if (btnId === 'btn_walkin') {
-        await sendReply(sender, "📅 To book a physical visit: https://surekhahospitals.in/contact");
-    } 
-    else if (btnId === 'btn_tele') {
-        await sendReply(sender, "💻 To book a video call: https://surekhahospitals.in/teleconsult");
-    } 
-    else if (btnId === 'btn_info') {
-        await sendInfoLinks(sender); // <-- Uses your new util function!
-    }
-}
-        }
-        res.sendStatus(200);
-    } else {
-        res.sendStatus(404);
+    try {
+        const body = req.body;
+
+        if (!body.object) return;
+        if (!body.entry?.[0]?.changes?.[0]?.value?.messages) return;
+
+        const value = body.entry[0].changes[0].value;
+        const message = value.messages[0];
+        const sender = message.from; // WhatsApp number e.g. "919032323095"
+        const msgType = message.type;
+
+        console.log(`📨 Message from ${sender} | type: ${msgType}`);
+
+        // Delegate to conversation handler
+        await handleMessage(sender, msgType, message);
+
+    } catch (err) {
+        console.error('❌ Webhook processing error:', err);
     }
 };
