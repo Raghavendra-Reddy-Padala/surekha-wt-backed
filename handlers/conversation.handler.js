@@ -1,71 +1,47 @@
-/**
- * WhatsApp Booking Bot — Conversation Handler
- *
- * Manages the full multi-step booking flow via in-memory session state.
- *
- * STATES:
- *   idle              → User says hi → show main menu
- *   awaiting_type     → User picks Walk-in / Tele / Info
- *   awaiting_doctor   → Showing doctor list, waiting for selection
- *   awaiting_name     → Collecting patient full name
- *   awaiting_date     → Collecting preferred date
- *   awaiting_slot     → Showing time slots, waiting for slot number
- *   awaiting_reason   → Collecting reason for visit
- *   awaiting_payment  → Payment link sent, waiting for Razorpay webhook
- */
-
 const { getSession, setSession, clearSession } = require('../utils/session.store');
-const { getActiveDoctors, getDoctorByName } = require('../utils/firebase.bot.util');
+const { getActiveDoctors } = require('../utils/firebase.bot.util');
 const { createPaymentLink } = require('../utils/razorpay.link.util');
 const {
     sendReply,
     sendMainMenu,
+    sendDepartmentList,   // ← new import
     sendDoctorList,
     sendSlotList,
     sendPaymentLink,
 } = require('../utils/whatsapp.bot.util');
 
 // ─────────────────────────────────────────────
-// ENTRY POINT — called from webhook.controller.js
+// ENTRY POINT
 // ─────────────────────────────────────────────
 const handleMessage = async (sender, msgType, message) => {
     const session = getSession(sender) || { state: 'idle' };
 
-    // ── TEXT MESSAGES ──────────────────────────────────────────────────────────
     if (msgType === 'text') {
         const text = message.text.body.trim();
         const lower = text.toLowerCase();
 
-        // Always respond to greetings with the main menu
-        if (lower === 'hi' || lower === 'hello' || lower === 'hey' || lower === 'start' || lower === 'menu') {
+        if (['hi', 'hello', 'hey', 'start', 'menu'].includes(lower)) {
             clearSession(sender);
             await sendMainMenu(sender);
             setSession(sender, { state: 'awaiting_type' });
             return;
         }
 
-        // Cancel anytime
-        if (lower === 'cancel' || lower === 'quit' || lower === 'exit') {
+        if (['cancel', 'quit', 'exit'].includes(lower)) {
             clearSession(sender);
             await sendReply(sender, '❌ Booking cancelled. Type *Hi* to start again.');
             return;
         }
 
-        // Route based on current state
         switch (session.state) {
-
             case 'awaiting_name':
                 return await handleName(sender, text, session);
-
             case 'awaiting_date':
                 return await handleDate(sender, text, session);
-
             case 'awaiting_slot':
                 return await handleSlotSelection(sender, text, session);
-
             case 'awaiting_reason':
                 return await handleReason(sender, text, session);
-
             case 'awaiting_payment':
                 await sendReply(
                     sender,
@@ -74,21 +50,17 @@ const handleMessage = async (sender, msgType, message) => {
                     'Type *cancel* to start over.'
                 );
                 return;
-
             default:
-                // Unexpected text — show menu
                 await sendMainMenu(sender);
                 setSession(sender, { state: 'awaiting_type' });
         }
     }
 
-    // ── INTERACTIVE — BUTTON REPLY ─────────────────────────────────────────────
     if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
         const btnId = message.interactive.button_reply.id;
         return await handleButtonReply(sender, btnId, session);
     }
 
-    // ── INTERACTIVE — LIST REPLY (doctor selection) ────────────────────────────
     if (msgType === 'interactive' && message.interactive.type === 'list_reply') {
         const listId = message.interactive.list_reply.id;
         return await handleListReply(sender, listId, session);
@@ -96,19 +68,17 @@ const handleMessage = async (sender, msgType, message) => {
 };
 
 // ─────────────────────────────────────────────
-// BUTTON REPLIES — Main menu + back buttons
+// BUTTON REPLIES — main menu
 // ─────────────────────────────────────────────
 const handleButtonReply = async (sender, btnId, session) => {
     if (btnId === 'btn_walkin') {
         await startDoctorSelection(sender, 'paid_appointment');
         return;
     }
-
     if (btnId === 'btn_tele') {
         await startDoctorSelection(sender, 'teleconsultation');
         return;
     }
-
     if (btnId === 'btn_info') {
         await sendReply(
             sender,
@@ -124,7 +94,7 @@ const handleButtonReply = async (sender, btnId, session) => {
 };
 
 // ─────────────────────────────────────────────
-// STEP 1 — Show doctor list
+// STEP 1 — Fetch doctors, show dept list or doctor list
 // ─────────────────────────────────────────────
 const startDoctorSelection = async (sender, appointmentType) => {
     await sendReply(sender, '⏳ Fetching our doctors...');
@@ -137,26 +107,94 @@ const startDoctorSelection = async (sender, appointmentType) => {
         return;
     }
 
-    // Cache the doctor list in session to avoid re-fetching
-    setSession(sender, {
-        state: 'awaiting_doctor',
-        appointmentType,
-        doctors, // cache full doctor objects
-    });
-
-    await sendDoctorList(sender, doctors, appointmentType);
-};
-
-// ─────────────────────────────────────────────
-// STEP 2 — Doctor selected from list
-// ─────────────────────────────────────────────
-const handleListReply = async (sender, listId, session) => {
-    if (session.state !== 'awaiting_doctor') {
-        await sendMainMenu(sender);
-        setSession(sender, { state: 'awaiting_type' });
+    // ≤10 doctors total — skip department step
+    if (doctors.length <= 10) {
+        setSession(sender, { state: 'awaiting_doctor', appointmentType, doctors });
+        await sendDoctorList(sender, doctors, appointmentType);
         return;
     }
 
+    // >10 doctors — group by department
+    const deptMap = {};
+    for (const doc of doctors) {
+        const dept = doc.department || 'General';
+        if (!deptMap[dept]) deptMap[dept] = [];
+        deptMap[dept].push(doc);
+    }
+
+    const deptNames = Object.keys(deptMap).sort();
+
+    setSession(sender, {
+        state: 'awaiting_department',
+        appointmentType,
+        deptMap,
+        allDeptNames: deptNames,
+    });
+
+    // Show first page of departments (max 9 + 1 "More" button)
+    await sendDepartmentList(sender, deptNames, appointmentType, 0);
+};
+// ─────────────────────────────────────────────
+// LIST REPLIES — routes to dept or doctor handler
+// ─────────────────────────────────────────────
+const handleListReply = async (sender, listId, session) => {
+
+    // Route: department selected
+    if (session.state === 'awaiting_department') {
+        return await handleDepartmentReply(sender, listId, session);
+    }
+
+    // Route: doctor selected
+    if (session.state === 'awaiting_doctor') {
+        return await handleDoctorReply(sender, listId, session);
+    }
+
+    // Unexpected state — reset
+    await sendMainMenu(sender);
+    setSession(sender, { state: 'awaiting_type' });
+};
+
+// ─────────────────────────────────────────────
+// STEP 1b — Department chosen → show doctors in that dept
+// ─────────────────────────────────────────────
+ const handleDepartmentReply = async (sender, listId, session) => {
+
+    // User tapped "More departments → page N"
+    if (listId.startsWith('dept_page_')) {
+        const page = parseInt(listId.replace('dept_page_', ''));
+        await sendDepartmentList(sender, session.allDeptNames, session.appointmentType, page);
+        return;
+    }
+
+    if (!listId.startsWith('dept_')) {
+        await sendReply(sender, '⚠️ Please select a department from the list.');
+        return;
+    }
+
+    const deptName = listId.replace('dept_', '');
+    const deptMap = session.deptMap || {};
+    const doctors = deptMap[deptName];
+
+    if (!doctors || !doctors.length) {
+        await sendReply(sender, '⚠️ Department not found. Please try again.');
+        return;
+    }
+
+    setSession(sender, {
+        state: 'awaiting_doctor',
+        appointmentType: session.appointmentType,
+        doctors,
+        deptMap: null,
+        allDeptNames: null,
+    });
+
+    await sendDoctorList(sender, doctors, session.appointmentType);
+};
+
+// ─────────────────────────────────────────────
+// STEP 2 — Doctor chosen → collect name
+// ─────────────────────────────────────────────
+const handleDoctorReply = async (sender, listId, session) => {
     if (!listId.startsWith('doc_')) {
         await sendReply(sender, '⚠️ Please select a doctor from the list.');
         return;
@@ -180,8 +218,7 @@ const handleListReply = async (sender, listId, session) => {
         department: selectedDoctor.department || '',
         appointmentCost,
         schedule: selectedDoctor.schedule || [],
-        // Clear doctor cache to save memory
-        doctors: null,
+        doctors: null,  // free memory
     });
 
     await sendReply(
@@ -218,7 +255,6 @@ const handleName = async (sender, text, session) => {
 // STEP 4 — Collect date & show slots
 // ─────────────────────────────────────────────
 const handleDate = async (sender, text, session) => {
-    // Accept DD-MM-YYYY or DD/MM/YYYY
     const normalised = text.replace(/\//g, '-').trim();
     const dateRegex = /^(\d{2})-(\d{2})-(\d{4})$/;
     const match = normalised.match(dateRegex);
@@ -243,16 +279,12 @@ const handleDate = async (sender, text, session) => {
         return;
     }
 
-    // Get day of week to filter slots
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = dayNames[parsedDate.getDay()];
 
-    // Find slots for that day from doctor's schedule
     const schedule = session.schedule || [];
     const daySchedule = schedule.find(s => s.day === dayName);
     const availableSlots = daySchedule?.slots || [];
-
-    // ISO format for storing
     const isoDate = `${year}-${month}-${day}`;
 
     if (!availableSlots.length) {
@@ -296,7 +328,7 @@ const handleSlotSelection = async (sender, text, session) => {
 };
 
 // ─────────────────────────────────────────────
-// STEP 6 — Reason → Create Payment Link
+// STEP 6 — Reason → Create payment link
 // ─────────────────────────────────────────────
 const handleReason = async (sender, text, session) => {
     const reason = text.toLowerCase() === 'skip' ? '' : text;

@@ -1,16 +1,10 @@
-/**
- * WhatsApp message helpers for the booking bot.
- * Extends your existing whatsapp.util.js — add these functions to that file
- * OR keep them here and import alongside the existing ones.
- */
-
 const axios = require('axios');
 
 const WA_API = `https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`;
 const HEADERS = { Authorization: `Bearer ${process.env.META_TOKEN}` };
 
 // ─────────────────────────────────────────────
-// REUSE your existing sendReply from whatsapp.util.js
+// SEND PLAIN TEXT REPLY
 // ─────────────────────────────────────────────
 const sendReply = async (to, text) => {
     try {
@@ -26,7 +20,7 @@ const sendReply = async (to, text) => {
 };
 
 // ─────────────────────────────────────────────
-// MAIN MENU (3 buttons — same as your existing sendMenu)
+// MAIN MENU (3 buttons)
 // ─────────────────────────────────────────────
 const sendMainMenu = async (to) => {
     try {
@@ -54,32 +48,60 @@ const sendMainMenu = async (to) => {
 };
 
 // ─────────────────────────────────────────────
-// DOCTOR LIST — WhatsApp List Message
-// Grouped by department. Max 10 rows per section.
-// doctors: array of { id, name, department, designation, appointmentcost }
+// STEP 1 (only when >10 doctors) — Department list
+// WhatsApp hard limit: max 10 rows total across all sections
+// ─────────────────────────────────────────────
+// Supports unlimited departments via pagination (9 per page + 1 "More" row)
+const sendDepartmentList = async (to, allDeptNames, appointmentType, page = 0) => {
+    const typeLabel = appointmentType === 'teleconsultation' ? 'Teleconsultation' : 'Walk-in';
+    const PAGE_SIZE = 9; // reserve 1 row for "More" button
+    const start = page * PAGE_SIZE;
+    const pageItems = allDeptNames.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < allDeptNames.length;
+    const nextPage = page + 1;
+    const totalPages = Math.ceil(allDeptNames.length / PAGE_SIZE);
+
+    const rows = pageItems.map(dept => ({
+        id: `dept_${dept}`,
+        title: dept.substring(0, 24),
+    }));
+
+    // Add "More departments" row if there are more pages
+    if (hasMore) {
+        rows.push({
+            id: `dept_page_${nextPage}`,
+            title: '➡️ More departments',
+            description: `Page ${nextPage + 1} of ${totalPages}`,
+        });
+    }
+
+    try {
+        await axios.post(WA_API, {
+            messaging_product: 'whatsapp',
+            to,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                body: {
+                    text: `📋 *Select a Department for your ${typeLabel}*` +
+                          (totalPages > 1 ? `\n\n_Page ${page + 1} of ${totalPages}_` : ''),
+                },
+                action: {
+                    button: 'View Departments',
+                    sections: [{ title: 'Departments', rows }],
+                },
+            },
+        }, { headers: HEADERS });
+    } catch (e) {
+        console.error('❌ sendDepartmentList failed:', e.response?.data || e.message);
+    }
+};
+// ─────────────────────────────────────────────
+// STEP 2 — Doctor list (always ≤10 doctors passed in)
 // ─────────────────────────────────────────────
 const sendDoctorList = async (to, doctors, appointmentType) => {
+    const typeLabel = appointmentType === 'teleconsultation' ? 'Teleconsultation' : 'Walk-in';
     try {
-        // Group by department
-        const grouped = {};
-        for (const doc of doctors) {
-            const dept = doc.department || 'General';
-            if (!grouped[dept]) grouped[dept] = [];
-            grouped[dept].push(doc);
-        }
-
-        // Build sections (WhatsApp allows max 10 sections, 10 rows each)
-        const sections = Object.entries(grouped).map(([dept, docs]) => ({
-            title: dept.substring(0, 24), // WA max 24 chars
-            rows: docs.map(d => ({
-                id: `doc_${d.id}`,
-                title: d.name.substring(0, 24),
-                description: `${d.designation || ''} | ₹${d.appointmentcost || 500}`.substring(0, 72),
-            })),
-        }));
-
-        const typeLabel = appointmentType === 'teleconsultation' ? 'Teleconsultation' : 'Walk-in';
-
         await axios.post(WA_API, {
             messaging_product: 'whatsapp',
             to,
@@ -91,7 +113,16 @@ const sendDoctorList = async (to, doctors, appointmentType) => {
                 },
                 action: {
                     button: 'View Doctors',
-                    sections,
+                    sections: [
+                        {
+                            title: 'Doctors',
+                            rows: doctors.slice(0, 10).map(d => ({
+                                id: `doc_${d.id}`,
+                                title: d.name.substring(0, 24),
+                                description: `${d.designation || ''} | ₹${d.appointmentcost || 500}`.substring(0, 72),
+                            })),
+                        },
+                    ],
                 },
             },
         }, { headers: HEADERS });
@@ -101,9 +132,7 @@ const sendDoctorList = async (to, doctors, appointmentType) => {
 };
 
 // ─────────────────────────────────────────────
-// TIME SLOT LIST — numbered text message
-// WhatsApp list messages max out at 10 rows,
-// so we use a clean numbered list for slots.
+// TIME SLOTS — numbered text message
 // ─────────────────────────────────────────────
 const sendSlotList = async (to, slots, doctorName, date) => {
     const slotLines = slots.map((slot, i) => `  ${i + 1}. ${slot}`).join('\n');
@@ -131,7 +160,7 @@ const sendPaymentLink = async (to, paymentUrl, patientName, doctorName, amount, 
 };
 
 // ─────────────────────────────────────────────
-// BOOKING CONFIRMATION MESSAGE (after payment)
+// BOOKING CONFIRMATION (after payment webhook)
 // ─────────────────────────────────────────────
 const sendBookingConfirmation = async (to, booking) => {
     const { patientName, doctorName, date, timeSlot, department, appointmentType, bookingId, paymentDetails } = booking;
@@ -158,7 +187,7 @@ const sendBookingConfirmation = async (to, booking) => {
 };
 
 // ─────────────────────────────────────────────
-// RECEPTIONIST ALERT (after payment)
+// RECEPTIONIST ALERT (after payment webhook)
 // ─────────────────────────────────────────────
 const sendReceptionistAlert = async (booking) => {
     const { patientName, phone, doctorName, date, timeSlot, reason, appointmentType, bookingId, paymentDetails } = booking;
@@ -184,6 +213,7 @@ const sendReceptionistAlert = async (booking) => {
 module.exports = {
     sendReply,
     sendMainMenu,
+    sendDepartmentList,   // ← new export
     sendDoctorList,
     sendSlotList,
     sendPaymentLink,

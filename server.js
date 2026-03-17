@@ -10,12 +10,14 @@ const appointmentRoutes = require('./routes/appointment.routes');
 const webhookRoutes = require('./routes/webhook.routes');
 const razorpayWebhookRoutes = require('./routes/razorpay.webhook.routes'); // 👈 NEW
 const agoraController = require('./controllers/agora.controller');
+const reviewsRoutes = require('./routes/reviews.routes');
 
 const app = express();
 
 // ⚠️  IMPORTANT ORDER: Razorpay webhook MUST be mounted BEFORE express.json()
 // because it needs the raw request body for HMAC signature verification.
-app.use('/', razorpayWebhookRoutes); // 👈 BEFORE express.json()
+app.use('/', razorpayWebhookRoutes); 
+
 
 // Global middleware
 app.use(express.json());
@@ -26,6 +28,8 @@ app.use('/', otpRoutes);
 app.use('/', paymentRoutes);
 app.use('/', appointmentRoutes);
 app.use('/', webhookRoutes);
+app.use('/', reviewsRoutes);
+
 
 app.get('/agora-token/:channelName', agoraController.generateToken);
 
