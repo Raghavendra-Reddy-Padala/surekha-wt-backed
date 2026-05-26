@@ -25,12 +25,20 @@ exports.handleRazorpayWebhook = async (req, res) => {
 
     if (!receivedSignature || !webhookSecret) {
         console.error('❌ Missing signature or webhook secret');
+        console.error('   receivedSignature present:', !!receivedSignature);
+        console.error('   webhookSecret present:', !!webhookSecret);
         return res.status(400).json({ success: false, error: 'Missing signature' });
     }
 
+    // Debug: confirm raw body was received
+    console.log(`📦 Webhook received | rawBody: ${req.rawBody ? req.rawBody.length + ' bytes' : 'MISSING - using fallback'} | event: ${req.body?.event}`);
+
+    // ✅ CRITICAL: Must use req.rawBody (original Buffer from Razorpay), NOT re-stringified body.
+    // Re-stringifying changes whitespace/key order → HMAC will never match.
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body));
     const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
-        .update(JSON.stringify(req.body))
+        .update(rawBody)
         .digest('hex');
 
     if (expectedSignature !== receivedSignature) {
