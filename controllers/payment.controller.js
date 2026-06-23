@@ -44,27 +44,43 @@ exports.verifyPayment = async (req, res) => {
     const {
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
         patientName, phone, email, doctorName, date, timeSlot, department, reason,
-        appointmentType // 👈 "teleconsultation" OR "paid_appointment"
+        appointmentType, // 👈 "teleconsultation", "paid_appointment", or "walk_in_offline"
+        payment_status
     } = req.body;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return res.status(400).json({ success: false, error: "Payment details missing" });
+    let amountPaid = 0;
+    let paymentCurrency = "INR";
+    let paymentMethod = "Pay_at_Hospital";
+    let paymentStatusFinal = payment_status || "unpaid";
+
+    if (appointmentType !== "walk_in_offline" && razorpay_payment_id !== "PAY_AT_HOSPITAL") {
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({ success: false, error: "Payment details missing" });
+        }
+
+        try {
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+                .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+                .digest('hex');
+
+            if (expectedSignature !== razorpay_signature) {
+                console.error("❌ Payment signature mismatch! Possible tampering.");
+                return res.status(400).json({ success: false, error: "Payment verification failed. Invalid signature." });
+            }
+
+            const payment = await razorpay.payments.fetch(razorpay_payment_id);
+            amountPaid = payment.amount / 100; 
+            paymentCurrency = payment.currency;
+            paymentMethod = payment.method || "Razorpay";
+            paymentStatusFinal = payment.status || "captured";
+        } catch (error) {
+            console.error("Razorpay Verify Error:", error);
+            return res.status(500).json({ success: false, error: "Payment verification failed with gateway" });
+        }
     }
 
     try {
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-            .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-            .digest('hex');
-
-        if (expectedSignature !== razorpay_signature) {
-            console.error("❌ Payment signature mismatch! Possible tampering.");
-            return res.status(400).json({ success: false, error: "Payment verification failed. Invalid signature." });
-        }
-
-        const payment = await razorpay.payments.fetch(razorpay_payment_id);
-        const amountPaid = payment.amount / 100; 
-
         // 🔀 DYNAMIC ROUTING TO THE CORRECT COLLECTION
         let targetCollection = "appointments"; // Fallback
         if (appointmentType === "teleconsultation") {
@@ -88,12 +104,12 @@ exports.verifyPayment = async (req, res) => {
             type: appointmentType || "in-person",
             
             paymentDetails: {
-                orderId: razorpay_order_id, 
-                paymentId: razorpay_payment_id,
+                orderId: razorpay_order_id || "N/A", 
+                paymentId: razorpay_payment_id || "PAY_AT_HOSPITAL",
                 amountPaid: amountPaid, 
-                currency: payment.currency,
-                paymentMethod: payment.method || "Razorpay",
-                paymentStatus: payment.status || "captured",
+                currency: paymentCurrency,
+                paymentMethod: paymentMethod,
+                paymentStatus: paymentStatusFinal,
                 paidAt: new Date().toISOString(),
             },
             createdAt: serverTimestamp(),
@@ -137,11 +153,11 @@ exports.verifyPayment = async (req, res) => {
             success: true, 
             bookingId, 
             collectionSaved: targetCollection,
-            message: "Payment verified and booked successfully!" 
+            message: appointmentType === "walk_in_offline" ? "Appointment booked successfully!" : "Payment verified and booked successfully!" 
         });
 
     } catch (error) {
-        console.error("Verify Payment Error:", error);
-        res.status(500).json({ success: false, error: "Payment verification failed" });
+        console.error("Verify Payment / Booking Error:", error);
+        res.status(500).json({ success: false, error: "Booking / Payment verification failed" });
     }
 };
