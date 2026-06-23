@@ -80,6 +80,17 @@ exports.verifyPayment = async (req, res) => {
         }
     }
 
+    let appointmentCost = 500;
+    try {
+        const doctorsSnap = await getDocs(query(collection(db, "doctors"), where("name", "==", doctorName)));
+        if (!doctorsSnap.empty) {
+            const doctorData = doctorsSnap.docs[0].data();
+            appointmentCost = parseInt(doctorData.appointmentCost || doctorData.appointmentcost || 500);
+        }
+    } catch (err) {
+        console.warn("Error fetching doctor cost in verifyPayment:", err);
+    }
+
     try {
         // 🔀 DYNAMIC ROUTING TO THE CORRECT COLLECTION
         let targetCollection = "website_appointments"; // Fallback
@@ -102,11 +113,13 @@ exports.verifyPayment = async (req, res) => {
             status: "confirmed",
             bookedVia: "web",
             type: appointmentType || "in-person",
+            appointmentCost: appointmentCost,
 
             paymentDetails: {
                 orderId: razorpay_order_id || "N/A",
                 paymentId: razorpay_payment_id || "PAY_AT_HOSPITAL",
                 amountPaid: amountPaid,
+                amountToCollect: paymentStatusFinal === "unpaid" ? appointmentCost : 0,
                 currency: paymentCurrency,
                 paymentMethod: paymentMethod,
                 paymentStatus: paymentStatusFinal,
