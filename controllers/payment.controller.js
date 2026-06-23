@@ -13,7 +13,7 @@ exports.createOrder = async (req, res) => {
 
     try {
         const doctorsSnap = await getDocs(query(collection(db, "doctors"), where("name", "==", doctorName)));
-        let appointmentCost = 500; 
+        let appointmentCost = 500;
 
         if (!doctorsSnap.empty) {
             const doctorData = doctorsSnap.docs[0].data();
@@ -30,8 +30,8 @@ exports.createOrder = async (req, res) => {
 
         console.log(`💳 Razorpay order created: ${order.id} for ₹${appointmentCost}`);
         res.status(200).json({
-            success: true, orderId: order.id, amount: amountInPaise, 
-            amountDisplay: appointmentCost, currency: "INR", 
+            success: true, orderId: order.id, amount: amountInPaise,
+            amountDisplay: appointmentCost, currency: "INR",
             keyId: process.env.RAZORPAY_KEY_ID,
         });
     } catch (error) {
@@ -70,7 +70,7 @@ exports.verifyPayment = async (req, res) => {
             }
 
             const payment = await razorpay.payments.fetch(razorpay_payment_id);
-            amountPaid = payment.amount / 100; 
+            amountPaid = payment.amount / 100;
             paymentCurrency = payment.currency;
             paymentMethod = payment.method || "Razorpay";
             paymentStatusFinal = payment.status || "captured";
@@ -82,31 +82,31 @@ exports.verifyPayment = async (req, res) => {
 
     try {
         // 🔀 DYNAMIC ROUTING TO THE CORRECT COLLECTION
-        let targetCollection = "appointments"; // Fallback
+        let targetCollection = "website_appointments"; // Fallback
         if (appointmentType === "teleconsultation") {
             targetCollection = "teleconsultations";
         } else if (appointmentType === "paid_appointment") {
-            targetCollection = "paid_appointments";
+            targetCollection = "website_appointments";
         }
 
         // Structured data ready for the Admin Dashboard
         const bookingData = {
-            patientName, 
+            patientName,
             phone,
             email: email || "",
-            doctorName, 
-            date, 
-            timeSlot: timeSlot || "", 
+            doctorName,
+            date,
+            timeSlot: timeSlot || "",
             department: department || "",
-            reason: reason || "", 
-            status: "confirmed", 
+            reason: reason || "",
+            status: "confirmed",
             bookedVia: "web",
             type: appointmentType || "in-person",
-            
+
             paymentDetails: {
-                orderId: razorpay_order_id || "N/A", 
+                orderId: razorpay_order_id || "N/A",
                 paymentId: razorpay_payment_id || "PAY_AT_HOSPITAL",
-                amountPaid: amountPaid, 
+                amountPaid: amountPaid,
                 currency: paymentCurrency,
                 paymentMethod: paymentMethod,
                 paymentStatus: paymentStatusFinal,
@@ -122,7 +122,7 @@ exports.verifyPayment = async (req, res) => {
         // 2. Save to the User's subcollection
         if (phone) {
             await setDoc(
-                firestoreDoc(db, "users", phone, targetCollection, bookingId), 
+                firestoreDoc(db, "users", phone, targetCollection, bookingId),
                 { ...bookingData, bookingId }
             );
         }
@@ -133,27 +133,27 @@ exports.verifyPayment = async (req, res) => {
             if (!doctorsSnap.empty) {
                 const doctorId = doctorsSnap.docs[0].id;
                 await setDoc(
-                    firestoreDoc(db, "doctors", doctorId, targetCollection, bookingId), 
+                    firestoreDoc(db, "doctors", doctorId, targetCollection, bookingId),
                     { ...bookingData, bookingId, doctorId }
                 );
             }
-        } catch (err) { 
-            console.warn("Doctor subcollection write failed:", err); 
+        } catch (err) {
+            console.warn("Doctor subcollection write failed:", err);
         }
 
         // 4. Send WhatsApp Alerts
         try {
             await sendWhatsApp(phone, process.env.TEMP_PATIENT_ACK, [patientName, doctorName]);
             await sendWhatsApp(process.env.RECEPTIONIST_PHONE, process.env.TEMP_STAFF_ALERT, [patientName, phone, doctorName, date]);
-        } catch (waErr) { 
-            console.warn("WhatsApp failed but payment was successful:", waErr.message); 
+        } catch (waErr) {
+            console.warn("WhatsApp failed but payment was successful:", waErr.message);
         }
 
-        res.status(200).json({ 
-            success: true, 
-            bookingId, 
+        res.status(200).json({
+            success: true,
+            bookingId,
             collectionSaved: targetCollection,
-            message: appointmentType === "walk_in_offline" ? "Appointment booked successfully!" : "Payment verified and booked successfully!" 
+            message: appointmentType === "walk_in_offline" ? "Appointment booked successfully!" : "Payment verified and booked successfully!"
         });
 
     } catch (error) {
