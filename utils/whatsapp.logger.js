@@ -35,7 +35,7 @@ const logWhatsApp = async ({
 }) => {
     try {
         await addDoc(collection(db, 'whatsapp_logs'), {
-            phone: String(phone || ''),
+            phone: String(phone || '').replace(/\D/g, ''),
             direction: direction || 'out',
             type: type || 'text',
             content: String(content || '').substring(0, 1000), // cap at 1000 chars

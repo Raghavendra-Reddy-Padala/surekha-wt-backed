@@ -4,7 +4,10 @@ exports.webRequest = async (req, res) => {
     const { patientName, patientPhone, doctorName, date } = req.body;
     try {
         await sendWhatsApp(patientPhone, process.env.TEMP_PATIENT_ACK, [patientName, doctorName]);
-        await sendWhatsApp(process.env.RECEPTIONIST_PHONE, process.env.TEMP_STAFF_ALERT, [patientName, patientPhone, doctorName, date]);
+        const receptionistPhones = (process.env.RECEPTIONIST_PHONE || '').split(',').map(p => p.trim()).filter(Boolean);
+        for (const phone of receptionistPhones) {
+            await sendWhatsApp(phone, process.env.TEMP_STAFF_ALERT, [patientName, patientPhone, doctorName, date]);
+        }
         res.status(200).json({ success: true, message: "Inquiry processed" });
     } catch (error) {
         res.status(400).json({ success: false, error: "Invalid Number or WhatsApp Error" });
