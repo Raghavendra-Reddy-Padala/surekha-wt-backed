@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logOutgoing } = require('./whatsapp.logger');
 
 const WA_API = `https://graph.facebook.com/v25.0/${process.env.META_PHONE_ID}/messages`;
 const HEADERS = { Authorization: `Bearer ${process.env.META_TOKEN}` };
@@ -14,8 +15,11 @@ const sendReply = async (to, text) => {
             type: 'text',
             text: { body: text },
         }, { headers: HEADERS });
+        // Log outgoing message (non-blocking)
+        logOutgoing(to, 'text', text.substring(0, 200));
     } catch (e) {
         console.error('❌ sendReply failed:', e.response?.data || e.message);
+        logOutgoing(to, 'text', text.substring(0, 200), e);
     }
 };
 
@@ -42,8 +46,10 @@ const sendMainMenu = async (to) => {
                 },
             },
         }, { headers: HEADERS });
+        logOutgoing(to, 'interactive', '[Main Menu]');
     } catch (e) {
         console.error('❌ sendMainMenu failed:', e.response?.data || e.message);
+        logOutgoing(to, 'interactive', '[Main Menu]', e);
     }
 };
 
@@ -92,8 +98,10 @@ const sendDepartmentList = async (to, allDeptNames, appointmentType, page = 0) =
                 },
             },
         }, { headers: HEADERS });
+        logOutgoing(to, 'interactive', `[Department List page=${page}]`);
     } catch (e) {
         console.error('❌ sendDepartmentList failed:', e.response?.data || e.message);
+        logOutgoing(to, 'interactive', `[Department List page=${page}]`, e);
     }
 };
 // ─────────────────────────────────────────────
@@ -126,8 +134,10 @@ const sendDoctorList = async (to, doctors, appointmentType) => {
                 },
             },
         }, { headers: HEADERS });
+        logOutgoing(to, 'interactive', `[Doctor List count=${doctors.length}]`);
     } catch (e) {
         console.error('❌ sendDoctorList failed:', e.response?.data || e.message);
+        logOutgoing(to, 'interactive', `[Doctor List count=${doctors.length}]`, e);
     }
 };
 
@@ -188,16 +198,24 @@ const sendBookingConfirmation = async (to, booking) => {
 
 // ─────────────────────────────────────────────
 // RECEPTIONIST ALERT (after payment webhook)
+// Supports multiple receptionist phones via RECEPTIONIST_PHONE
+// env var as a comma-separated list, e.g.:
+//   RECEPTIONIST_PHONE=+919032323095,+916305700197
 // ─────────────────────────────────────────────
 const sendReceptionistAlert = async (booking) => {
     const { patientName, phone, doctorName, date, timeSlot, reason, appointmentType, bookingId, paymentDetails } = booking;
     const typeLabel = appointmentType === 'teleconsultation' ? 'TELECONSULTATION' : 'WALK-IN';
 
-    const receptionistPhone = process.env.RECEPTIONIST_PHONE;
-    if (!receptionistPhone) return;
+    const receptionistPhonesRaw = process.env.RECEPTIONIST_PHONE;
+    if (!receptionistPhonesRaw) return;
 
-    await sendReply(
-        receptionistPhone,
+    // Support comma-separated list of receptionist phones
+    const receptionistPhones = receptionistPhonesRaw
+        .split(',')
+        .map(p => p.trim())
+        .filter(Boolean);
+
+    const alertText =
         `🔔 *New ${typeLabel} Booking (WhatsApp)*\n\n` +
         `👤 Patient: ${patientName}\n` +
         `📞 Phone: ${phone}\n` +
@@ -206,8 +224,11 @@ const sendReceptionistAlert = async (booking) => {
         `🕐 Time: ${timeSlot}\n` +
         `💬 Reason: ${reason || 'Not specified'}\n` +
         `💰 Paid: ₹${paymentDetails?.amountPaid}\n` +
-        `🔖 Booking ID: ${bookingId}`
-    );
+        `🔖 Booking ID: ${bookingId}`;
+
+    for (const receptionistPhone of receptionistPhones) {
+        await sendReply(receptionistPhone, alertText);
+    }
 };
 
 module.exports = {

@@ -54,6 +54,9 @@ const getDoctorByName = async (doctorName) => {
  * Save booking to all relevant Firestore collections.
  * Mirrors exactly what payment.controller.js does for web bookings.
  *
+ * Also saves to `website_appointments` so the admin panel always shows
+ * WhatsApp bookings alongside web bookings (with bookedVia: 'whatsapp').
+ *
  * @param {Object} bookingData - Full booking details
  * @param {string} appointmentType - "paid_appointment" | "teleconsultation"
  * @returns {string} bookingId
@@ -74,7 +77,19 @@ const saveBookingToFirestore = async (bookingData, appointmentType) => {
     const apptRef = await addDoc(collection(db, targetCollection), fullData);
     const bookingId = apptRef.id;
 
-    // 2. Save to user's subcollection
+    // 2. Also save to website_appointments so the admin panel shows WhatsApp bookings
+    //    alongside web bookings (bookedVia: 'whatsapp' helps staff distinguish them)
+    try {
+        await setDoc(
+            doc(db, 'website_appointments', bookingId),
+            { ...fullData, bookingId }
+        );
+        console.log(`✅ Booking mirrored to website_appointments with ID: ${bookingId}`);
+    } catch (mirrorErr) {
+        console.warn('⚠️ Could not mirror booking to website_appointments:', mirrorErr.message);
+    }
+
+    // 3. Save to user's subcollection
     const phone = bookingData.phone;
     if (phone) {
         await setDoc(
@@ -83,7 +98,7 @@ const saveBookingToFirestore = async (bookingData, appointmentType) => {
         );
     }
 
-    // 3. Save to doctor's subcollection
+    // 4. Save to doctor's subcollection
     const doctorId = bookingData.doctorId;
     if (doctorId) {
         await setDoc(

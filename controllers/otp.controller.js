@@ -1,5 +1,6 @@
 const { db, doc, getDoc, setDoc, deleteDoc } = require('../config/firebase');
 const { sendWhatsApp } = require('../utils/whatsapp.util');
+const { logOutgoing } = require('../utils/whatsapp.logger');
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -43,9 +44,13 @@ exports.sendOtp = async (req, res) => {
         console.log(`🔐 OTP ${isResend ? 'RESENT' : 'SENT'} for ${phone}: ${code}`);
         await sendWhatsApp(phone, process.env.TEMP_OTP, [code], [code]);
 
+        // Log OTP send to whatsapp_logs (fire-and-forget)
+        logOutgoing(phone, 'otp', `OTP ${isResend ? 'resent' : 'sent'} via template: ${process.env.TEMP_OTP}`);
+
         res.status(200).json({ success: true, message: isResend ? "OTP resent" : "OTP sent" });
     } catch (error) {
         console.error("OTP Error:", error);
+        logOutgoing(phone, 'otp', 'OTP send failed', error);
         res.status(500).json({ success: false, error: "Failed to send OTP" });
     }
 };
