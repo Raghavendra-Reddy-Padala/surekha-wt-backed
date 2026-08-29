@@ -157,7 +157,10 @@ exports.verifyPayment = async (req, res) => {
         // 4. Send WhatsApp Alerts
         try {
             await sendWhatsApp(phone, process.env.TEMP_PATIENT_ACK, [patientName, doctorName]);
-            await sendWhatsApp(process.env.RECEPTIONIST_PHONE, process.env.TEMP_STAFF_ALERT, [patientName, phone, doctorName, date]);
+            const receptionistPhones = (process.env.RECEPTIONIST_PHONE || '').split(',').map(p => p.trim()).filter(Boolean);
+            for (const rPhone of receptionistPhones) {
+                await sendWhatsApp(rPhone, process.env.TEMP_STAFF_ALERT, [patientName, phone, doctorName, date]);
+            }
         } catch (waErr) {
             console.warn("WhatsApp failed but payment was successful:", waErr.message);
         }
